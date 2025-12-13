@@ -96,23 +96,42 @@ It supports querying structured knowledge extracted from PDF documents and web a
 ✅ Type-safe, modular NestJS architecture
 
 ## High-Level Architecture
-Data Source (PDF / URL)
-        ↓
-Text Extraction
-        ↓
-Chunking (with overlap)
-        ↓
-Embeddings (Ollama)
-        ↓
-Vector Storage (Qdrant)
-        ↓
-Similarity Search
-        ↓
-Context Construction
-        ↓
-LLM (Ollama)
-        ↓
-Answer (Grounded in source)
+
+**Ingestion & Query Pipeline**
+
+1. **Data Source**
+   - PDF documents
+   - Web URLs (articles, blogs, docs)
+
+2. **Text Extraction**
+   - PDF text parsing
+   - HTML content extraction
+
+3. **Chunking**
+   - Fixed-size chunks
+   - Overlap for semantic continuity
+
+4. **Embeddings**
+   - Generated using Ollama (`nomic-embed-text`)
+
+5. **Vector Storage**
+   - Stored in Qdrant collections
+
+6. **Retrieval**
+   - Top-K similarity search
+   - Score threshold filtering
+
+7. **Context Construction**
+   - Context size capped
+   - Source-grounded chunks only
+
+8. **LLM Generation**
+   - Ollama LLM
+   - Streaming response
+
+9. **Answer**
+   - Grounded strictly in retrieved sources
+
 
 ## Tech Stack
 | Layer       | Technology                    |
@@ -126,27 +145,34 @@ Answer (Grounded in source)
 | Web Parsing | Readability / HTML extraction |
 
 ## Project Structure
+
+```text
 src/
-├── chat/                # Chat & RAG logic
-|   ├── chat.module.ts
+├── chat/                   # Chat & RAG orchestration
+│   ├── chat.module.ts
 │   ├── chat.service.ts
 │   ├── chat.controller.ts
 │   └── entities/
-├── pdf/                 # PDF ingestion pipeline
-|   ├── pdf.module.ts
+│
+├── pdf/                    # PDF ingestion pipeline
+│   ├── pdf.module.ts
 │   ├── pdf.service.ts
-|   ├── pdf.controller.ts
+│   ├── pdf.controller.ts
 │   └── entities/
-├── qdrant/              # Vector DB abstraction
-|   ├── qdrant.module.ts
+│
+├── qdrant/                 # Vector DB abstraction
+│   ├── qdrant.module.ts
 │   └── qdrant.service.ts
-├── shared/
-|   ├── shared.module.ts
+│
+├── shared/                 # Shared utilities
+│   ├── shared.module.ts
 │   ├── chunk.service.ts
 │   ├── embeddings.service.ts
 │   └── pdf-parser.service.ts
+│
 └── common/
     └── constants/
+
 
 ##  RAG Query Flow
 User sends a question
