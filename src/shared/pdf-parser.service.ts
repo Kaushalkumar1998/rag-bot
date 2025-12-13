@@ -13,7 +13,6 @@ export class PdfParserService {
       const result = await parser.getText();
       return result.text.trim();
     } finally {
-      // VERY IMPORTANT to avoid memory leaks
       await parser.destroy();
     }
   }

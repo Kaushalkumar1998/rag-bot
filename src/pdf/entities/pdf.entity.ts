@@ -17,6 +17,8 @@ export class PdfEntity extends Document {
 
   @Prop({ required: true })
   chunks: number;
+  @Prop({ required: true, enum: ['PROCESSING', 'READY', 'FAILED'] })
+  status: string;
 }
 
 export const PdfSchema = SchemaFactory.createForClass(PdfEntity);

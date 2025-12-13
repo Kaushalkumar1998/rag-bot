@@ -1,8 +1,13 @@
+import { HttpService } from '@nestjs/axios';
 import { Injectable, Logger } from '@nestjs/common';
-
+import { firstValueFrom } from 'rxjs';
+export interface OllamaEmbeddingResponse {
+  embedding: number[];
+}
 @Injectable()
 export class EmbeddingsService {
   private logger = new Logger(EmbeddingsService.name);
+  constructor(private readonly http: HttpService) {}
 
   async embedTexts(texts: string[]): Promise<number[][]> {
     const vectors: number[][] = [];
@@ -15,31 +20,16 @@ export class EmbeddingsService {
   }
 
   private async embedSingle(text: string): Promise<number[]> {
-    const response = await fetch(
-      `${process.env.OLLAMA_URL || 'http://localhost:11434'}/api/embeddings`,
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          model: process.env.OLLAMA_EMBED_MODEL || 'nomic-embed-text',
-          prompt: text, // ✅ CORRECT FIELD
-        }),
-      },
+    const url = `${process.env.OLLAMA_URL}/api/embeddings`;
+
+    const { data } = await firstValueFrom(
+      this.http.post<OllamaEmbeddingResponse>(url, {
+        model: process.env.OLLAMA_EMBED_MODEL,
+        prompt: text,
+      }),
     );
 
-    if (!response.ok) {
-      const err = await response.text();
-      throw new Error('Failed to generate embedding: ' + err);
-    }
-
-    const json = await response.json();
-
-    if (!Array.isArray(json.embedding) || json.embedding.length === 0) {
-      this.logger.error('Invalid embedding response from Ollama', json);
-      throw new Error('Ollama returned empty embedding');
-    }
-
-    return json.embedding;
+    return data.embedding;
   }
 
   async embedText(text: string): Promise<number[]> {

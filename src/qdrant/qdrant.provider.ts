@@ -1,28 +1,38 @@
-import { Provider } from '@nestjs/common';
+import { Provider, Logger } from '@nestjs/common';
 import { QdrantClient } from '@qdrant/js-client-rest';
 import { QDRANT_CLIENT } from '../common/constants/storage.constants';
+
+const logger = new Logger('QdrantProvider');
 
 export const qdrantProvider: Provider = {
   provide: QDRANT_CLIENT,
   useFactory: async () => {
-    const url = (process.env.QDRANT_URL || 'http://localhost:6333').replace(
-      /\/$/,
-      '',
-    );
-    // instantiate client
-    const client = new QdrantClient({ url });
-    // optional: perform a lightweight health check so we fail fast on startup
-    try {
-      await client.getCollections(); // small API call to verify connectivity
-    } catch (err) {
-      // rethrow to fail app start if Qdrant is unreachable
-      console.error(
-        'Qdrant connection failed during startup:',
-        err?.message ?? err,
-      );
-      throw err;
+    const url = process.env.QDRANT_URL;
+    if (!url) {
+      throw new Error('QDRANT_URL is not defined');
     }
-    console.log(`Qdrant client initialized at ${url}`);
-    return client;
+
+    const client = new QdrantClient({
+      url,
+      timeout: 10_000,
+    });
+    const MAX_RETRIES = 5;
+
+    for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+      try {
+        await client.getCollections();
+        logger.log(`Qdrant connected at ${url}`);
+        return client;
+      } catch (err) {
+        logger.warn(`Qdrant connection attempt ${attempt} failed`);
+        if (attempt === MAX_RETRIES) {
+          logger.error('Qdrant connection failed after retries', err);
+          throw err;
+        }
+        await new Promise((r) => setTimeout(r, attempt * 1000));
+      }
+    }
+
+    throw new Error('Unreachable');
   },
 };

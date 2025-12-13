@@ -15,14 +15,14 @@ export class PdfController {
   constructor(private readonly pdfService: PdfService) {}
 
   @Post('ingest')
-  @ApiConsumes('multipart/form-data') // 👈 IMPORTANT
+  @ApiConsumes('multipart/form-data')
   @ApiBody({
     schema: {
       type: 'object',
       properties: {
         file: {
           type: 'string',
-          format: 'binary', // 👈 THIS enables file upload in Swagger
+          format: 'binary',
         },
         title: {
           type: 'string',
