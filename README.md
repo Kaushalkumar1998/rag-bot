@@ -70,29 +70,100 @@ $ mau deploy
 
 With Mau, you can deploy your application in just a few clicks, allowing you to focus on building features rather than managing infrastructure.
 
-## Resources
+📚 RAG Bot (PDF & Web-based Retrieval-Augmented Generation)
 
-Check out a few resources that may come in handy when working with NestJS:
+A production-ready Retrieval-Augmented Generation (RAG) system built with NestJS, Qdrant, MongoDB, and Ollama.
+It supports querying structured knowledge extracted from PDF documents and web articles (e.g. Medium) using vector search.
 
-- Visit the [NestJS Documentation](https://docs.nestjs.com) to learn more about the framework.
-- For questions and support, please visit our [Discord channel](https://discord.gg/G7Qnnhy).
-- To dive deeper and get more hands-on experience, check out our official video [courses](https://courses.nestjs.com/).
-- Deploy your application to AWS with the help of [NestJS Mau](https://mau.nestjs.com) in just a few clicks.
-- Visualize your application graph and interact with the NestJS application in real-time using [NestJS Devtools](https://devtools.nestjs.com).
-- Need help with your project (part-time to full-time)? Check out our official [enterprise support](https://enterprise.nestjs.com).
-- To stay in the loop and get updates, follow us on [X](https://x.com/nestframework) and [LinkedIn](https://linkedin.com/company/nestjs).
-- Looking for a job, or have a job to offer? Check out our official [Jobs board](https://jobs.nestjs.com).
+## Features
 
-## Support
+✅ PDF ingestion & semantic search
 
-Nest is an MIT-licensed open source project. It can grow thanks to the sponsors and support by the amazing backers. If you'd like to join them, please [read more here](https://docs.nestjs.com/support).
+✅ Web article ingestion (Medium, blogs, docs)
 
-## Stay in touch
+✅ Vector embeddings using Ollama
 
-- Author - [Kamil Myśliwiec](https://twitter.com/kammysliwiec)
-- Website - [https://nestjs.com](https://nestjs.com/)
-- Twitter - [@nestframework](https://twitter.com/nestframework)
+✅ Qdrant vector database
 
-## License
+✅ Session-based conversational memory
 
-Nest is [MIT licensed](https://github.com/nestjs/nest/blob/master/LICENSE).
+✅ Context-limited, hallucination-safe RAG
+
+✅ Streaming LLM responses
+
+✅ Strong prompt discipline (TOON-ready)
+
+✅ Type-safe, modular NestJS architecture
+
+## High-Level Architecture
+Data Source (PDF / URL)
+        ↓
+Text Extraction
+        ↓
+Chunking (with overlap)
+        ↓
+Embeddings (Ollama)
+        ↓
+Vector Storage (Qdrant)
+        ↓
+Similarity Search
+        ↓
+Context Construction
+        ↓
+LLM (Ollama)
+        ↓
+Answer (Grounded in source)
+
+## Tech Stack
+| Layer       | Technology                    |
+| ----------- | ----------------------------- |
+| API         | NestJS                        |
+| Vector DB   | Qdrant                        |
+| Database    | MongoDB                       |
+| LLM         | Ollama                        |
+| Embeddings  | nomic-embed-text              |
+| PDF Parsing | Custom PDF parser             |
+| Web Parsing | Readability / HTML extraction |
+
+## Project Structure
+src/
+├── chat/                # Chat & RAG logic
+|   ├── chat.module.ts
+│   ├── chat.service.ts
+│   ├── chat.controller.ts
+│   └── entities/
+├── pdf/                 # PDF ingestion pipeline
+|   ├── pdf.module.ts
+│   ├── pdf.service.ts
+|   ├── pdf.controller.ts
+│   └── entities/
+├── qdrant/              # Vector DB abstraction
+|   ├── qdrant.module.ts
+│   └── qdrant.service.ts
+├── shared/
+|   ├── shared.module.ts
+│   ├── chunk.service.ts
+│   ├── embeddings.service.ts
+│   └── pdf-parser.service.ts
+└── common/
+    └── constants/
+
+##  RAG Query Flow
+User sends a question
+
+Query is embedded
+
+Top-K relevant chunks retrieved from Qdrant
+
+Context is capped (MAX_CONTEXT_CHARS)
+
+Prompt is built with:
+
+PDF / URL context
+
+Limited conversation history
+
+Ollama generates a grounded answer
+
+Response is streamed back to the client
+
