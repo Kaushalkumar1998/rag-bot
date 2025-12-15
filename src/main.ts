@@ -5,12 +5,12 @@ import { ValidationPipe } from '@nestjs/common/pipes';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
-  app.useGlobalPipes(
-    new ValidationPipe({
-      whitelist: true,
-      forbidNonWhitelisted: true,
-    }),
-  );
+  // app.useGlobalPipes(
+  //   new ValidationPipe({
+  //     whitelist: true,
+  //     forbidNonWhitelisted: true,
+  //   }),
+  // );
   const config = new DocumentBuilder()
     .setTitle('RAG BOT')
     .setDescription('The RAG BOT API description')

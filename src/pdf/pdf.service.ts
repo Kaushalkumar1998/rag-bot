@@ -9,6 +9,7 @@ import { QdrantService } from 'src/qdrant/qdrant.service';
 
 import { PdfEntity } from './entities/pdf.entity';
 import { UploadPdfDto } from './dto/upload-pdf.dto';
+import { Console } from 'console';
 
 @Injectable()
 export class PdfService {
@@ -68,8 +69,9 @@ export class PdfService {
       this.CHUNK_OVERLAP,
     );
 
-    if (!chunks.length) {
-      throw new Error('Failed to chunk PDF text');
+    // Only fail if input was non-empty AND chunking produced nothing
+    if (!text.trim()) {
+      throw new Error('Input text is empty after extraction');
     }
     return chunks;
   }

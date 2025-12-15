@@ -90,7 +90,7 @@ export class ChatService {
 
     const results = await this.qdrant.search(collection, embedding, {
       limit: this.RAG_LIMIT,
-      scoreThreshold: 0.7,
+      scoreThreshold: 0.5,
       withPayload: true,
     });
 
