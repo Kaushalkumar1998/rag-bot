@@ -34,6 +34,7 @@ export class ChatService {
     const session = await this.getOrCreateSession(dto);
 
     const embedding = await this.embedQuery(dto.message);
+
     const { context, sources } = await this.getRagContext(dto.pdfId, embedding);
 
     const prompt = this.buildPrompt(session.messages, context, dto.message);

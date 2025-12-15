@@ -72,7 +72,7 @@ export class QdrantService {
   ) {
     const {
       limit = 5,
-      scoreThreshold = 0.7,
+      scoreThreshold = 0.5,
       withPayload = true,
       withVector = false,
     } = options;
