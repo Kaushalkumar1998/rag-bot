@@ -5,17 +5,17 @@ import { lastValueFrom } from 'rxjs';
 @Injectable()
 export class PdfParserService {
   private readonly logger = new Logger(PdfParserService.name);
-  private readonly TIKA_URL = 'http://localhost:9998/tika';
 
   constructor(private readonly http: HttpService) {}
 
   async extractText(buffer: Buffer): Promise<string> {
+    const TIKA_URL = `${process.env.TIKA_URL}/tika`;
     if (!buffer?.length) {
       throw new BadRequestException('Empty file');
     }
 
     try {
-      const response$ = this.http.put(this.TIKA_URL, buffer, {
+      const response$ = this.http.put<string>(TIKA_URL, buffer, {
         headers: {
           'Content-Type': 'application/pdf',
           Accept: 'text/plain',
