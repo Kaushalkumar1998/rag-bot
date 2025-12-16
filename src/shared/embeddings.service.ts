@@ -1,48 +1,65 @@
+import { HttpService } from '@nestjs/axios';
 import { Injectable, Logger } from '@nestjs/common';
+import { firstValueFrom } from 'rxjs';
+
+export interface OllamaEmbeddingResponse {
+  embedding: number[];
+}
 
 @Injectable()
 export class EmbeddingsService {
   private logger = new Logger(EmbeddingsService.name);
 
-  async embedTexts(texts: string[]): Promise<number[][]> {
+  constructor(private readonly http: HttpService) {}
+
+  async embedTexts(texts: string[], batchSize = 8): Promise<number[][]> {
     const vectors: number[][] = [];
 
-    for (const text of texts) {
-      vectors.push(await this.embedSingle(text));
+    for (let i = 0; i < texts.length; i += batchSize) {
+      const batch = texts.slice(i, i + batchSize);
+
+      const results = await Promise.all(
+        batch.map((text) => this.safeEmbed(text)),
+      );
+
+      vectors.push(...(results.filter(Boolean) as number[][]));
     }
 
     return vectors;
   }
 
-  private async embedSingle(text: string): Promise<number[]> {
-    const response = await fetch(
-      `${process.env.OLLAMA_URL || 'http://localhost:11434'}/api/embeddings`,
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          model: process.env.OLLAMA_EMBED_MODEL || 'nomic-embed-text',
-          prompt: text, // ✅ CORRECT FIELD
-        }),
-      },
-    );
+  async embedText(text: string): Promise<number[]> {
+    const vector = await this.safeEmbed(text);
 
-    if (!response.ok) {
-      const err = await response.text();
-      throw new Error('Failed to generate embedding: ' + err);
+    if (!vector) {
+      throw new Error('Failed to generate embedding');
     }
 
-    const json = await response.json();
-
-    if (!Array.isArray(json.embedding) || json.embedding.length === 0) {
-      this.logger.error('Invalid embedding response from Ollama', json);
-      throw new Error('Ollama returned empty embedding');
-    }
-
-    return json.embedding;
+    return vector;
   }
 
-  async embedText(text: string): Promise<number[]> {
-    return this.embedSingle(text);
+  private async safeEmbed(text: string): Promise<number[] | null> {
+    const cleaned = text?.trim();
+    if (!cleaned) return null;
+
+    try {
+      return await this.embedSingle(cleaned);
+    } catch (err) {
+      this.logger.error('Embedding failed for chunk', err);
+      return null;
+    }
+  }
+
+  private async embedSingle(text: string): Promise<number[]> {
+    const url = `${process.env.OLLAMA_URL}/api/embeddings`;
+
+    const { data } = await firstValueFrom(
+      this.http.post<OllamaEmbeddingResponse>(url, {
+        model: process.env.OLLAMA_EMBED_MODEL,
+        prompt: text,
+      }),
+    );
+
+    return data.embedding;
   }
 }

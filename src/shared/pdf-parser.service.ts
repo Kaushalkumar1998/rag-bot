@@ -1,20 +1,70 @@
-import { Injectable, Logger } from '@nestjs/common';
-import { PDFParse } from 'pdf-parse';
+import { HttpService } from '@nestjs/axios';
+import { BadRequestException, Injectable, Logger } from '@nestjs/common';
+import { lastValueFrom } from 'rxjs';
 
 @Injectable()
 export class PdfParserService {
-  private logger = new Logger(PdfParserService.name);
+  private readonly logger = new Logger(PdfParserService.name);
+
+  constructor(private readonly http: HttpService) {}
+
   async extractText(buffer: Buffer): Promise<string> {
-    const parser = new PDFParse({
-      data: buffer,
-    });
+    const TIKA_URL = `${process.env.TIKA_URL}/tika`;
+    if (!buffer?.length) {
+      throw new BadRequestException('Empty file');
+    }
 
     try {
-      const result = await parser.getText();
-      return result.text.trim();
-    } finally {
-      // VERY IMPORTANT to avoid memory leaks
-      await parser.destroy();
+      const response$ = this.http.put<string>(TIKA_URL, buffer, {
+        headers: {
+          'Content-Type': 'application/pdf',
+          Accept: 'text/plain',
+        },
+        responseType: 'text',
+        maxBodyLength: Infinity,
+        maxContentLength: Infinity,
+      });
+
+      const response = await lastValueFrom(response$);
+      const rawText = response.data ?? '';
+
+      if (!rawText.trim()) {
+        throw new BadRequestException('No extractable text');
+      }
+
+      return this.normalizeText(rawText);
+    } catch (err) {
+      this.logger.error('Tika extraction failed', err);
+      throw new BadRequestException('Failed to extract text from PDF');
     }
+  }
+
+  /**
+   * GENERIC text normalization
+   * Works for PDF / Word / CSV / TXT
+   * No document-specific assumptions
+   */
+  private normalizeText(text: string): string {
+    return (
+      text
+        // normalize line endings
+        .replace(/\r\n/g, '\n')
+
+        // replace tabs with space
+        .replace(/\t/g, ' ')
+
+        // collapse multiple spaces
+        .replace(/[ ]{2,}/g, ' ')
+
+        // trim each line
+        .split('\n')
+        .map((line) => line.trim())
+        .join('\n')
+
+        // collapse excessive empty lines
+        .replace(/\n{3,}/g, '\n\n')
+
+        .trim()
+    );
   }
 }

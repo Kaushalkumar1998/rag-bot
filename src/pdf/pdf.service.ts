@@ -9,10 +9,16 @@ import { QdrantService } from 'src/qdrant/qdrant.service';
 
 import { PdfEntity } from './entities/pdf.entity';
 import { UploadPdfDto } from './dto/upload-pdf.dto';
+import { Console } from 'console';
 
 @Injectable()
 export class PdfService {
   private logger = new Logger(PdfService.name);
+
+  private readonly VECTOR_SIZE = Number(process.env.EMBEDDING_DIMENSION) || 768;
+  private readonly CHUNK_SIZE = Number(process.env.CHUNK_SIZE) || 800;
+  private readonly CHUNK_OVERLAP = Number(process.env.CHUNK_OVERLAP) || 100;
+  private readonly EMBED_BATCH_SIZE = Number(process.env.EMBED_BATCH_SIZE) || 8;
 
   constructor(
     @InjectModel(PdfEntity.name)
@@ -23,107 +29,154 @@ export class PdfService {
     private readonly qdrant: QdrantService,
   ) {}
 
+  async ingestPdf(file: Express.Multer.File, dto: UploadPdfDto) {
+    const text = await this.extractText(file);
+    const chunks = this.chunkText(text);
+
+    const pdf = await this.createPdfRecord(file, dto, chunks.length);
+    const collection = this.collectionName(pdf._id.toString());
+
+    try {
+      await this.createVectorCollection(collection);
+      await this.uploadChunks(collection, chunks, pdf, dto.title);
+      await this.markPdfReady(pdf._id.toString(), collection);
+
+      return {
+        ok: true,
+        pdfId: pdf._id,
+        chunks: chunks.length,
+        collection,
+      };
+    } catch (error) {
+      await this.handleFailure(pdf._id.toString(), collection, error);
+      throw error;
+    }
+  }
+
+  private async extractText(file: Express.Multer.File): Promise<string> {
+    const text = await this.pdfParser.extractText(file.buffer);
+
+    if (!text?.trim()) {
+      throw new Error('PDF contains no extractable text');
+    }
+    return text;
+  }
+
+  private chunkText(text: string): string[] {
+    const chunks = this.chunker.splitText(
+      text,
+      this.CHUNK_SIZE,
+      this.CHUNK_OVERLAP,
+    );
+
+    // Only fail if input was non-empty AND chunking produced nothing
+    if (!text.trim()) {
+      throw new Error('Input text is empty after extraction');
+    }
+    return chunks;
+  }
+
+  private async createPdfRecord(
+    file: Express.Multer.File,
+    dto: UploadPdfDto,
+    chunkCount: number,
+  ) {
+    return this.pdfModel.create({
+      title: dto.title,
+      originalFilename: file.originalname,
+      size: file.size,
+      chunks: chunkCount,
+      status: 'PROCESSING',
+    });
+  }
+
+  private async createVectorCollection(collection: string) {
+    await this.qdrant.createCollection(collection, this.VECTOR_SIZE);
+  }
+
+  private async uploadChunks(
+    collection: string,
+    chunks: string[],
+    pdf: PdfEntity,
+    title: string,
+  ) {
+    let index = 0;
+
+    for (let i = 0; i < chunks.length; i += this.EMBED_BATCH_SIZE) {
+      const batch = chunks.slice(i, i + this.EMBED_BATCH_SIZE);
+      const vectors = await this.embeddings.embedTexts(batch);
+
+      this.validateEmbeddingSize(vectors);
+
+      const points = this.buildPoints(
+        batch,
+        vectors,
+        pdf._id.toString(),
+        title,
+        index,
+      );
+
+      await this.qdrant.upsertPoints(collection, points);
+
+      index += batch.length;
+      this.logger.log(`Uploaded ${index}/${chunks.length} chunks`);
+    }
+  }
+
+  private validateEmbeddingSize(vectors: number[][]) {
+    if (vectors.some((v) => v.length !== this.VECTOR_SIZE)) {
+      throw new Error('Embedding dimension mismatch');
+    }
+  }
+
+  private buildPoints(
+    chunks: string[],
+    vectors: number[][],
+    pdfId: string,
+    title: string,
+    startIndex: number,
+  ) {
+    return chunks.map((chunk, i) => ({
+      id: startIndex + i,
+      vector: vectors[i],
+      payload: {
+        text: chunk,
+        pdfId,
+        title,
+        index: startIndex + i,
+      },
+    }));
+  }
+
+  private async markPdfReady(pdfId: string, collection: string) {
+    await this.pdfModel.updateOne(
+      { _id: pdfId },
+      {
+        $set: {
+          qdrantCollection: collection,
+          status: 'READY',
+        },
+      },
+    );
+  }
+
+  private async handleFailure(
+    pdfId: string,
+    collection: string,
+    error: unknown,
+  ) {
+    this.logger.error(`PDF ingestion failed: ${pdfId}`, error);
+
+    await this.pdfModel.updateOne(
+      { _id: pdfId },
+      { $set: { status: 'FAILED' } },
+    );
+
+    await this.qdrant.deleteCollection(collection).catch(() => null);
+  }
+
   private collectionName(docId: string) {
     const prefix = process.env.QDRANT_COLLECTION_PREFIX || 'pdf_docs_';
     return `${prefix}${docId}`;
-  }
-
-  async ingestPdf(file: Express.Multer.File, dto: UploadPdfDto) {
-    const title = dto.title;
-
-    // --------------------------------------------------
-    // 1) Extract text from PDF
-    // --------------------------------------------------
-    const text = await this.pdfParser.extractText(file.buffer);
-
-    if (!text || !text.trim()) {
-      throw new Error('PDF contains no extractable text.');
-    }
-
-    this.logger.log(`Extracted text length: ${text.length}`);
-
-    // --------------------------------------------------
-    // 2) Chunk text
-    // --------------------------------------------------
-    const chunks = this.chunker.splitText(
-      text,
-      Number(process.env.CHUNK_SIZE || 800),
-      Number(process.env.CHUNK_OVERLAP || 100),
-    );
-
-    if (!chunks.length) {
-      throw new Error('Failed to split PDF text into chunks.');
-    }
-    // --------------------------------------------------
-    // 3) Create MongoDB record FIRST
-    // --------------------------------------------------
-    const pdfRecord = await this.pdfModel.create({
-      title,
-      originalFilename: file.originalname,
-      size: file.size,
-      qdrantCollection: '',
-      chunks: chunks.length,
-    });
-
-    const docId = pdfRecord._id.toString();
-    const collection = this.collectionName(docId);
-
-    // --------------------------------------------------
-    // 4) Create Qdrant collection
-    // nomic-embed-text = 768 dims
-    // --------------------------------------------------
-    const VECTOR_SIZE = 768;
-
-    await this.qdrant.createCollection(collection, VECTOR_SIZE);
-
-    // --------------------------------------------------
-    // 5) Embed + upsert IN BATCHES (CRITICAL)
-    // --------------------------------------------------
-    const BATCH_SIZE = 8; // very safe for nomic-embed-text
-    let globalIndex = 0;
-
-    for (let i = 0; i < chunks.length; i += BATCH_SIZE) {
-      const batch = chunks.slice(i, i + BATCH_SIZE);
-
-      // 👉 generate embeddings for this batch only
-      const batchVectors = await this.embeddings.embedTexts(batch);
-
-      const points = batch.map((chunk, idx) => ({
-        id: globalIndex + idx, // ✅ unsigned integer
-        vector: batchVectors[idx],
-        payload: {
-          text: chunk,
-          pdfId: docId, // keep Mongo id here
-          title,
-          index: globalIndex + idx,
-        },
-      }));
-
-      // 👉 upsert immediately (do NOT accumulate)
-      await this.qdrant.upsertPoints(collection, points);
-
-      globalIndex += batch.length;
-
-      this.logger.log(
-        `Uploaded ${Math.min(globalIndex, chunks.length)} / ${chunks.length} chunks`,
-      );
-    }
-
-    // --------------------------------------------------
-    // 6) Update Mongo record with Qdrant collection name
-    // --------------------------------------------------
-    await this.pdfModel.updateOne(
-      { _id: docId },
-      { $set: { qdrantCollection: collection } },
-    );
-
-    this.logger.log(`PDF ingestion completed: ${docId}`);
-
-    return {
-      ok: true,
-      pdfId: docId,
-      chunks: chunks.length,
-      collection,
-    };
   }
 }

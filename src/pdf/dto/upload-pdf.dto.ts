@@ -1,6 +1,6 @@
 import { ApiProperty } from '@nestjs/swagger';
 
 export class UploadPdfDto {
-  @ApiProperty()
-  title?: string;
+  @ApiProperty({ required: true })
+  title: string;
 }
