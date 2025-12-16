@@ -158,6 +158,13 @@ Answer:
           model: process.env.OLLAMA_MODEL || 'llama3.2:3b',
           prompt,
           stream: true,
+          options: {
+            temperature: 0.3, // 🔥 reduces hallucination
+            top_p: 0.9,
+            top_k: 40,
+            num_ctx: 4096,
+            repeat_penalty: 1.1,
+          },
         },
         {
           responseType: 'stream',
